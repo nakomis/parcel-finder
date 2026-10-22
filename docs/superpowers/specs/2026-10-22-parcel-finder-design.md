@@ -85,7 +85,7 @@ to it. Everything else happens in the finder.
   *Dropshipping/联盟开发者 → Dropshipping (个人, individual)*; the developer profile was
   **approved the same afternoon** (email "Profile Approval Granted", 17:01). App created
   (category Drop Shipping, callback `https://nakom.is/alifinder` →
-  `http://127.0.0.1:8765/aliexpress/callback`). Keychain service `aliexpress-open-platform`,
+  `http://127.0.0.1:8775/aliexpress/callback`; moved from 8765 on 22 Oct, which the playlist backend also uses). Keychain service `aliexpress-open-platform`,
   accounts `app-key`, `app-secret`, `access-token`, `refresh-token`. The compliance form
   declares Anthropic (USA) as a third-party processor of product titles and images.
   **Spike results (22 Oct):**
