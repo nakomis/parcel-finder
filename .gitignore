@@ -218,3 +218,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Planning
+PLAN.md
+
+# Coverage
+coverage/
+lcov.info
+
+# Local run data
+*.jsonl
