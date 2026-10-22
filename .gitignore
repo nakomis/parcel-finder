@@ -228,3 +228,6 @@ lcov.info
 
 # Local run data
 *.jsonl
+
+# Plan execution workspace
+.superpowers/
