@@ -117,3 +117,8 @@ def test_search_terms_use_name_and_distinctive_ocr_words():
     q = identify.search_terms(ident)
     assert q.startswith("SOP-24 to DIP adapter board") and "SOP24PIN" in q and "1.27MM" in q
     assert "GND" not in q and " 24 " not in f" {q} " and len(q) < 120
+
+
+def test_search_terms_skip_keyboard_keys():   # a photo over a MacBook caught "fn control option"
+    ident = identify.Identification("SOP-24 adapter", "high", "", "haiku", "fn\ncontrol\noption\ncommand\nSOP24PIN")
+    assert identify.search_terms(ident) == "SOP-24 adapter SOP24PIN"

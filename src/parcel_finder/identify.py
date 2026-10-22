@@ -68,7 +68,9 @@ def match_rule(toks: set[str]) -> str | None:
     return next((verdict for verdict, pred in RULES if pred(toks)), None)
 
 
-_GENERIC = {"PWR", "RESET", "BOOT", "GND", "VCC", "3V", "5V", "3V3"}
+_GENERIC = {"PWR", "RESET", "BOOT", "GND", "VCC", "3V", "5V", "3V3",
+            # keyboard keys, when the photo catches a MacBook
+            "CONTROL", "OPTION", "COMMAND", "SHIFT", "RETURN", "DELETE", "ENTER", "CAPS", "LOCK", "ESC"}
 
 
 def is_informative(text: str | None) -> bool:
