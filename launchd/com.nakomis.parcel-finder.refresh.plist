@@ -10,7 +10,7 @@
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>PATH</key><string>__PATH__</string></dict>
-  <key>StartInterval</key><integer>43200</integer>
+  <key>StartInterval</key><integer>3600</integer>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>__HOME__/Library/Logs/parcel-finder/refresh.out</string>
   <key>StandardErrorPath</key><string>__HOME__/Library/Logs/parcel-finder/refresh.out</string>
