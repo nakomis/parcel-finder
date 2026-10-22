@@ -86,9 +86,59 @@ def serve(args) -> int:
         # Replaced by pipeline.run in Task 8.
         RunLog.start(photo).finish("received")
 
+    register_callback()
     srv = make_server(handle)
     print(f"parcel-finder listening on http://{config.HOST}:{config.PORT}", flush=True)
     srv.serve_forever()
+    return 0
+
+
+def register_callback() -> None:
+    from .orders.aliexpress import AliExpress, Reauthorise
+    from .service import register_route
+
+    def callback(query):
+        code = query.get("code", [None])[0]
+        if not code:
+            return 400, "No ?code= in the callback (is passthrough set on the nakom.is link?)."
+        try:
+            AliExpress.from_keychain().complete(code)
+        except Reauthorise as e:
+            return 502, f"Token swap failed: {e}"
+        return 200, "parcel-finder: AliExpress authorised, you can close this tab."
+
+    register_route("/aliexpress/callback", callback)
+
+
+def authorise(args) -> int:
+    from .orders.aliexpress import AliExpress
+    ae = AliExpress.from_keychain()
+    if args.code:
+        ae.complete(args.code)
+        print("authorised")
+        return 0
+    subprocess.run(["open", ae.authorise_url()])
+    print("Approve the app in the browser; the running service catches the callback.")
+    return 0
+
+
+def refresh(args) -> int:
+    from .orders.aliexpress import AliExpress, Reauthorise
+    from . import ui
+    try:
+        AliExpress.from_keychain().refresh()
+    except Reauthorise as e:
+        ui.notify("parcel-finder", "AliExpress needs re-authorising: run `parcel-finder authorise`")
+        print(f"reauthorise needed: {e}")
+        return 1
+    print("refreshed")
+    return 0
+
+
+def orders(args) -> int:
+    from .orders.aliexpress import AliExpress
+    for o in AliExpress.from_keychain().orders(args.ids):
+        print(f"{o.shop} {o.order_id} {o.ordered_at:%Y-%m-%d} {o.status}: {o.title}")
     return 0
 
 
@@ -96,6 +146,13 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="parcel-finder")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("serve", help="run the loopback service").set_defaults(fn=serve)
+    a = sub.add_parser("authorise", help="authorise the AliExpress app on your account")
+    a.add_argument("--code", help="paste the ?code= by hand")
+    a.set_defaults(fn=authorise)
+    sub.add_parser("refresh", help="refresh the AliExpress tokens").set_defaults(fn=refresh)
+    o = sub.add_parser("orders", help="list orders")
+    o.add_argument("ids", nargs="*", help="AliExpress order IDs")
+    o.set_defaults(fn=orders)
     d = sub.add_parser("doctor", help="check everything the finder needs")
     d.add_argument("--skip", action="append", help="name of a check to skip")
     d.set_defaults(fn=doctor)
