@@ -11,4 +11,4 @@ for label in com.nakomis.parcel-finder com.nakomis.parcel-finder.refresh; do
   launchctl bootstrap "gui/$(id -u)" "$dest/$label.plist"
   echo "loaded $label"
 done
-echo "health: $(curl -s --retry 5 --retry-connrefused 127.0.0.1:8765/health)"
+echo "health: $(curl -s --retry 5 --retry-connrefused 127.0.0.1:8775/health)"

@@ -10,7 +10,7 @@ OCR_MODEL = "glm-ocr"
 OCR_PROMPT = "Text Recognition:"
 
 HOST = "127.0.0.1"
-PORT = 8765
+PORT = 8775  # 8765 is taken by the playlist backend (all interfaces)
 
 SHARE_ROOT = Path("/Volumes/share/parcel-finder")
 LOG_DIR = HOME / "Library/Logs/parcel-finder"
