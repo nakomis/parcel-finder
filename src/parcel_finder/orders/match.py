@@ -50,7 +50,7 @@ def match_order(photo: Path, ident: Identification, orders: list[Order],
             thumb = _thumbnail(o.thumbnail_urls[0])
         if thumb:
             images.append(thumb)
-        lines.append(f"{i}. [{o.shop}, ordered {o.ordered_at:%d %b}] {o.title}"
+        lines.append(f"{i}. [{o.shop}, ordered {o.ordered_at:%d %b}] {o.title or '(title unknown: see its product image)'}"
                      + (f" (product image {len(images) - 1})" if thumb else ""))
     prompt = ("Image 0 is a photo of an item that has just arrived. A first look identified it as "
               f"\"{ident.item}\" ({ident.evidence}). Which of these recent orders is it? "

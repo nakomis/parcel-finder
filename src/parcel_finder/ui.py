@@ -20,6 +20,7 @@ def notify(title: str, text: str) -> None:
 _CHOOSE = '''
 on run argv
   set opts to items 2 thru -1 of argv
+  activate -- a background process's dialog otherwise opens behind everything
   set picked to choose from list opts with title "parcel-finder" with prompt (item 1 of argv) OK button name "Open"
   if picked is false then return "false"
   return item 1 of picked

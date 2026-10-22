@@ -163,7 +163,7 @@ def test_one_bad_aliexpress_order_keeps_the_rest(monkeypatch):
         {"expire_time": 9e15, "refresh_token_valid_time": 9e15})})
     ae = aliexpress.AliExpress("k", "s", store=store)
     orders, problems = ae.orders_tolerant(["bad", "1"])
-    assert [o.order_id for o in orders] == ["1"] and "bad" in problems[0]
+    assert [o.order_id for o in orders] == ["1"] and "network down" in problems["bad"]
 
 
 # I5: a stale cache never blocks a run; it is refreshed in the background.
@@ -175,7 +175,7 @@ def test_stale_cache_syncs_in_background(monkeypatch, tmp_path):
     monkeypatch.setattr(cache, "OrderCache", lambda: c)
     monkeypatch.setattr(cache, "sync", lambda *a, **k: (_ for _ in ()).throw(AssertionError("blocking sync")))
     monkeypatch.setattr(pipeline, "_start_background_sync", lambda: started.append(True))
-    monkeypatch.setattr(pipeline, "_aliexpress_orders", lambda ids: ([], None))
+    monkeypatch.setattr(pipeline, "_aliexpress_orders", lambda ids: ([], None, set()))
     pipeline.collect_orders()
     assert started == [True]
 
@@ -209,10 +209,10 @@ def test_aliexpress_falls_back_to_email_orders(monkeypatch, tmp_path):
     c.merge([Order("aliexpress", "777", "", t, "shipped", thumbnail_urls=["https://x/a.jpg"])],
             {"777": ["https://x/a.jpg"]}, synced_to=date.today())
     monkeypatch.setattr(cache, "OrderCache", lambda: c)
-    monkeypatch.setattr(pipeline, "_aliexpress_orders", lambda ids: (None, "refresh token missing or lapsed"))
+    monkeypatch.setattr(pipeline, "_aliexpress_orders", lambda ids: (None, "refresh token missing or lapsed", set(ids)))
     found, problem = pipeline.collect_orders()
     assert [(o.shop, o.order_id) for o in found] == [("aliexpress", "777")] and problem
-    assert found[0].title and found[0].thumbnail_urls
+    assert found[0].thumbnail_urls
 
 
 # I8: only AliExpress orders inside the window are looked up.
@@ -224,7 +224,7 @@ def test_only_recent_aliexpress_ids_are_queried(monkeypatch, tmp_path):
             {"new": [], "old": []}, synced_to=date.today())
     asked = []
     monkeypatch.setattr(cache, "OrderCache", lambda: c)
-    monkeypatch.setattr(pipeline, "_aliexpress_orders", lambda ids: asked.append(sorted(ids)) or ([], None))
+    monkeypatch.setattr(pipeline, "_aliexpress_orders", lambda ids: asked.append(sorted(ids)) or ([], None, set()))
     pipeline.collect_orders()
     assert asked == [["new"]]
 
@@ -300,7 +300,7 @@ def test_undated_aliexpress_ids_are_still_queried(monkeypatch, tmp_path):
     monkeypatch.setattr(cache, "OrderCache", lambda: c)
     monkeypatch.setattr(pipeline, "_aliexpress_orders", lambda ids: (
         [Order("aliexpress", "legacy", "Buzzer", now - timedelta(days=3), "shipped"),
-         Order("aliexpress", "legacy", "Ancient thing", now - timedelta(days=300), "FINISH")], None))
+         Order("aliexpress", "legacy", "Ancient thing", now - timedelta(days=300), "FINISH")], None, set()))
     found, _ = pipeline.collect_orders()
     assert [o.title for o in found] == ["Buzzer"] and found[0].thumbnail_urls == ["https://x/t.jpg"]
 
@@ -311,3 +311,46 @@ def test_medium_order_match_does_not_rename_the_item(tmp_path, photo_fixture):
     d = replace(d, collect_orders=lambda: ([m.order], None), match_order=lambda *a: m)
     pipeline.run(photo_fixture, d)
     assert "identified as a buzzer." in calls["send"][0]
+
+
+# Found in end-to-end testing, 22 Oct 18:52.
+def test_pick_list_comes_to_the_front(monkeypatch):
+    scripts = []
+    monkeypatch.setattr(ui, "_osascript", lambda script, *a: scripts.append(script) or "false")
+    ui.choose([cand("a", 1)], "buzzer")
+    assert "activate" in scripts[0].split("choose from list")[0]
+
+
+def test_low_confidence_match_does_not_drive_the_search(tmp_path, photo_fixture):
+    d, calls = _deps(tmp_path)
+    queries = []
+    m = OrderMatch(Order("aliexpress", "9", "", datetime.now(timezone.utc), "x"), "low", "guess")
+    d = replace(d, identify=lambda p, log: Identification("SOP-24 adapter", "high", "", "haiku", "SOP24PIN"),
+                collect_orders=lambda: ([m.order], None), match_order=lambda *a: m,
+                search=lambda q, a: queries.append(q) or [Candidate("sid-a", "ddr-banging", "/p", datetime.now(timezone.utc), 5, "s", 5.0)])
+    pipeline.run(photo_fixture, d)
+    assert queries[0].startswith("SOP-24 adapter") and "SOP24PIN" in queries[0]
+
+
+def test_untitled_order_never_becomes_the_query(tmp_path, photo_fixture):
+    d, calls = _deps(tmp_path)
+    queries = []
+    m = OrderMatch(Order("aliexpress", "9", "", datetime.now(timezone.utc), "x"), "high", "thumbnail")
+    d = replace(d, collect_orders=lambda: ([m.order], None), match_order=lambda *a: m,
+                search=lambda q, a: queries.append(q) or [])
+    pipeline.run(photo_fixture, d)
+    assert queries[0] == "buzzer"
+
+
+def test_api_answered_orders_do_not_fall_back(monkeypatch, tmp_path):
+    from datetime import date as _date
+    now = datetime.now(timezone.utc)
+    c = cache.OrderCache(tmp_path / "orders.json")
+    c.merge([Order("aliexpress", "cancelled-one", "", now - timedelta(days=3), "delivered"),
+             Order("aliexpress", "unreachable", "", now - timedelta(days=3), "shipped")],
+            {"cancelled-one": [], "unreachable": []}, synced_to=_date.today())
+    monkeypatch.setattr(cache, "OrderCache", lambda: c)
+    # The API answered for cancelled-one (no live lines) but failed for unreachable.
+    monkeypatch.setattr(pipeline, "_aliexpress_orders", lambda ids: ([], "unreachable: network down", {"unreachable"}))
+    found, _ = pipeline.collect_orders()
+    assert [o.order_id for o in found] == ["unreachable"]

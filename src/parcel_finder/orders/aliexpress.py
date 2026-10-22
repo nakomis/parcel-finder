@@ -135,12 +135,13 @@ class AliExpress:
     def orders(self, order_ids: list[str]) -> list[Order]:
         return [o for oid in order_ids for o in self._order(oid)]
 
-    def orders_tolerant(self, order_ids: list[str]) -> tuple[list[Order], list[str]]:
-        """Like orders(), but one bad order doesn't lose the rest. Reauthorise still propagates."""
-        out, problems = [], []
+    def orders_tolerant(self, order_ids: list[str]) -> tuple[list[Order], dict[str, str]]:
+        """Like orders(), but one bad order doesn't lose the rest: returns the orders and
+        {order_id: problem} for those the API couldn't answer. Reauthorise still propagates."""
+        out, problems = [], {}
         for oid in order_ids:
             try:
                 out += self._order(oid)
             except (ApiError, KeyError, ValueError, OSError) as e:  # URLError is an OSError
-                problems.append(f"{oid}: {e}")
+                problems[oid] = str(e)
         return out, problems
