@@ -231,3 +231,6 @@ lcov.info
 
 # Plan execution workspace
 .superpowers/
+
+# Local eval cases (paths to personal photos)
+tests/eval/cases.json
