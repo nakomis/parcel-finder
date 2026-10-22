@@ -132,11 +132,45 @@ def refresh(args) -> int:
         print(f"reauthorise needed: {e}")
         return 1
     print("refreshed")
+    return sync_orders(args)
+
+
+def collect_orders(sync_if_stale: bool = True) -> tuple[list, str | None]:
+    """All recent orders from the cache (synced from Gmail if stale) plus AliExpress details.
+    AliExpress problems are reported, never fatal."""
+    from .orders import cache
+    from .orders.aliexpress import AliExpress, ApiError, Reauthorise
+    c = cache.OrderCache()
+    if sync_if_stale and c.stale():
+        cache.sync(c)
+    found = list(c.orders)
+    problem = None
+    try:
+        ae = AliExpress.from_keychain().orders(list(c.ae_ids))
+        for o in ae:
+            o.thumbnail_urls = c.ae_ids.get(o.order_id, [])
+        found += ae
+    except (Reauthorise, ApiError, config.MissingSecret) as e:
+        problem = str(e)
+    return found, problem
+
+
+def sync_orders(args) -> int:
+    from .orders import cache
+    cache.sync(cache.OrderCache())
+    print("orders synced")
     return 0
 
 
 def orders(args) -> int:
     from .orders.aliexpress import AliExpress
+    if not args.ids:
+        found, problem = collect_orders()
+        for o in found:
+            print(f"{o.shop} {o.order_id or '-'} {o.ordered_at:%Y-%m-%d} {o.status}: {o.title}")
+        if problem:
+            print(f"AliExpress unavailable: {problem}")
+        return 0
     for o in AliExpress.from_keychain().orders(args.ids):
         print(f"{o.shop} {o.order_id} {o.ordered_at:%Y-%m-%d} {o.status}: {o.title}")
     return 0
@@ -149,7 +183,8 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser("authorise", help="authorise the AliExpress app on your account")
     a.add_argument("--code", help="paste the ?code= by hand")
     a.set_defaults(fn=authorise)
-    sub.add_parser("refresh", help="refresh the AliExpress tokens").set_defaults(fn=refresh)
+    sub.add_parser("refresh", help="refresh the AliExpress tokens and sync order emails").set_defaults(fn=refresh)
+    sub.add_parser("sync", help="sync order emails from Gmail into the cache").set_defaults(fn=sync_orders)
     o = sub.add_parser("orders", help="list orders")
     o.add_argument("ids", nargs="*", help="AliExpress order IDs")
     o.set_defaults(fn=orders)
