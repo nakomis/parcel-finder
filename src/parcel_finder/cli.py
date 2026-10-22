@@ -79,12 +79,13 @@ def doctor(args) -> int:
 
 
 def serve(args) -> int:
-    from .runlog import RunLog
     from .service import make_server
 
+    from .pipeline import run as run_pipeline
+
     def handle(photo):
-        # Replaced by pipeline.run in Task 8.
-        RunLog.start(photo).finish("received")
+        out = run_pipeline(photo)
+        print(f"{out.run_id} {out.status} {out.session_id or ''} {out.detail}".rstrip(), flush=True)
 
     register_callback()
     srv = make_server(handle)
@@ -135,26 +136,6 @@ def refresh(args) -> int:
     return sync_orders(args)
 
 
-def collect_orders(sync_if_stale: bool = True) -> tuple[list, str | None]:
-    """All recent orders from the cache (synced from Gmail if stale) plus AliExpress details.
-    AliExpress problems are reported, never fatal."""
-    from .orders import cache
-    from .orders.aliexpress import AliExpress, ApiError, Reauthorise
-    c = cache.OrderCache()
-    if sync_if_stale and c.stale():
-        cache.sync(c)
-    found = list(c.orders)
-    problem = None
-    try:
-        ae = AliExpress.from_keychain().orders(list(c.ae_ids))
-        for o in ae:
-            o.thumbnail_urls = c.ae_ids.get(o.order_id, [])
-        found += ae
-    except (Reauthorise, ApiError, config.MissingSecret) as e:
-        problem = str(e)
-    return found, problem
-
-
 def sync_orders(args) -> int:
     from .orders import cache
     cache.sync(cache.OrderCache())
@@ -165,6 +146,7 @@ def sync_orders(args) -> int:
 def orders(args) -> int:
     from .orders.aliexpress import AliExpress
     if not args.ids:
+        from .pipeline import collect_orders
         found, problem = collect_orders()
         for o in found:
             print(f"{o.shop} {o.order_id or '-'} {o.ordered_at:%Y-%m-%d} {o.status}: {o.title}")
@@ -187,6 +169,26 @@ def find_sessions(args) -> int:
     return 0
 
 
+def run_photo(args) -> int:
+    from pathlib import Path
+    from .pipeline import run as run_pipeline
+    out = run_pipeline(Path(args.photo).expanduser(), dry_run=args.dry_run)
+    print(f"{out.run_id} {out.status} {out.session_id or ''} {out.detail}".rstrip())
+    return 0 if out.status not in ("error", "not-found") else 1
+
+
+def replay(args) -> int:
+    """Re-run a logged run's photo without delivering anything."""
+    from pathlib import Path
+    for line in (config.LOG_DIR / "runs.jsonl").read_text().splitlines():
+        e = json.loads(line)
+        if e["run_id"] == args.run_id and e["stage"] == "start":
+            args.photo, args.dry_run = e["photo"], True
+            return run_photo(args)
+    print(f"no run {args.run_id}")
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="parcel-finder")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -199,6 +201,13 @@ def main(argv: list[str] | None = None) -> int:
     o = sub.add_parser("orders", help="list orders")
     o.add_argument("ids", nargs="*", help="AliExpress order IDs")
     o.set_defaults(fn=orders)
+    r = sub.add_parser("run", help="run the whole pipeline on a photo")
+    r.add_argument("photo")
+    r.add_argument("--dry-run", action="store_true", help="stop before delivering anything")
+    r.set_defaults(fn=run_photo)
+    rp = sub.add_parser("replay", help="re-run a logged run's photo, without delivering")
+    rp.add_argument("run_id")
+    rp.set_defaults(fn=replay)
     f = sub.add_parser("sessions", help="find the session for a description")
     f.add_argument("query")
     f.set_defaults(fn=find_sessions)
