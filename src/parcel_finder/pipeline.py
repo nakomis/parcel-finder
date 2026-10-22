@@ -116,7 +116,8 @@ def run(photo: Path, deps: Deps | None = None, dry_run: bool = False) -> Outcome
         log.event("match", order=match.order.title if match else None, shop=match.order.shop if match else None,
                   confidence=match.confidence if match else None, reason=match.reason if match else None)
         item = match.order.title if match and match.confidence == "high" else ident.item
-        query = match.order.title if match else ident.item  # even a medium match is a good search hint
+        from .identify import search_terms
+        query = match.order.title if match else search_terms(ident)  # even a medium match is a good hint
         candidates = deps.search(query, match.order.ordered_at if match else None)
         log.event("search", query=query, candidates=[(c.title, c.session_id, round(c.score, 1)) for c in candidates[:8]])
         try:

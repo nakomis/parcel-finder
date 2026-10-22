@@ -2,6 +2,8 @@
 import base64
 import json
 import re
+import subprocess
+import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -18,11 +20,24 @@ class Identification:
     evidence: str
     source: str  # "rule" | "haiku" | "haiku-image-only"
     ocr_text: str | None
+    description: str = ""  # Haiku's long description; `item` is the short name used everywhere else
+
+
+# GLM-OCR has a 4096-token context: a full-resolution ScreenEye picture (2160×3840) overflows it.
+OCR_MAX_DIM = 1600
+
+
+def _downscaled(photo: Path) -> bytes:
+    with tempfile.TemporaryDirectory() as d:
+        out = Path(d) / "ocr.jpg"
+        r = subprocess.run(["sips", "-s", "format", "jpeg", "-Z", str(OCR_MAX_DIM), str(photo), "--out", str(out)],
+                           capture_output=True)
+        return out.read_bytes() if r.returncode == 0 and out.exists() else photo.read_bytes()
 
 
 def ocr(photo: Path) -> str | None:
     body = json.dumps({"model": config.OCR_MODEL, "prompt": config.OCR_PROMPT, "stream": False,
-                       "images": [base64.b64encode(photo.read_bytes()).decode()]}).encode()
+                       "images": [base64.b64encode(_downscaled(photo)).decode()]}).encode()
     req = urllib.request.Request(f"{config.OLLAMA_URL}/api/generate", body, {"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
@@ -66,16 +81,18 @@ def is_informative(text: str | None) -> bool:
 SCHEMA = {
     "type": "object",
     "properties": {
+        "name": {"type": "string", "description": "short product name, at most 6 words"},
         "item": {"type": "string"},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
         "evidence": {"type": "string"},
     },
-    "required": ["item", "confidence", "evidence"],
+    "required": ["name", "item", "confidence", "evidence"],
     "additionalProperties": False,
 }
 
-PROMPT = ("This is a photo of an electronics item that has just arrived in a parcel. Say what it is and "
-          "what it is for.\n{hint}"
+PROMPT = ("This is a photo of an electronics item that has just arrived in a parcel. Give a short name "
+          "for it (at most 6 words, like a shop listing title, e.g. \"SOP-24 to DIP adapter board\"), then "
+          "describe what it is and what it is for.\n{hint}"
           "Only name a maker, model or chip when its name is clearly legible in the photo; never infer a chip "
           "from a logo, a blurred marking or the board's shape. Give the visible text or features that decide "
           "it, and use low confidence when you are inferring rather than reading.")
@@ -94,4 +111,14 @@ def identify(photo: Path, log: RunLog) -> Identification:
     out = haiku.ask_json(PROMPT.format(hint=hint), [photo.read_bytes()], SCHEMA)
     source = "haiku" if informative else "haiku-image-only"
     log.event("identify", source=source, **out)
-    return Identification(out["item"], out["confidence"], out["evidence"], source, text)
+    return Identification(out["name"], out["confidence"], out["evidence"], source, text, out["item"])
+
+
+def search_terms(ident: Identification, max_words: int = 5) -> str:
+    """The short name plus the most distinctive legible words (part numbers, markings): sharper
+    conversation-memory queries than a long description."""
+    words = []
+    for w in re.findall(r"[A-Za-z0-9][A-Za-z0-9.+\-]*", ident.ocr_text or ""):
+        if len(w) >= 4 and re.search(r"[A-Za-z]", w) and w.upper() not in _GENERIC and w not in words:
+            words.append(w)
+    return " ".join([ident.item] + words[:max_words])
