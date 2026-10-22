@@ -228,3 +228,9 @@ lcov.info
 
 # Local run data
 *.jsonl
+
+# Plan execution workspace
+.superpowers/
+
+# Local eval cases (paths to personal photos)
+tests/eval/cases.json

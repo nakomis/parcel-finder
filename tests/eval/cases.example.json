@@ -1,0 +1,5 @@
+[
+  {"name": "Adafruit 4682 clone", "photo": "~/path/to/IMG_0194.jpg", "source": "rule", "must_mention": ["SDIO"]},
+  {"name": "USB cable tester", "photo": "~/path/to/IMG_0196.jpg", "must_mention": ["USB"]},
+  {"name": "Waveshare RP2xxx-Tiny pair", "photo": "~/path/to/IMG_tiny.jpg", "must_mention": ["microcontroller"], "must_not_mention": ["ethernet", "wiznet"]}
+]

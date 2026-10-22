@@ -1,0 +1,10 @@
+{"aliexpress_trade_ds_order_get_response": {"result": {
+  "gmt_create": "2026-10-20 05:54:41", "order_status": "WAIT_BUYER_ACCEPT_GOODS",
+  "store_info": {"store_id": 1, "store_name": "EstarDyn Factory Store"},
+  "logistics_status": "SELLER_SEND_GOODS",
+  "child_order_list": {"aeop_child_order_info": [
+    {"product_count": 1, "product_id": 1005011855197311,
+     "product_name": "Estardyn Active/Passive Dual Mode Buzzer Module 5V, High/Low Level Trigger & PWM for Raspberry Pi ESP32"},
+    {"product_count": 1, "product_id": 1005007256393643, "end_reason": "CANCELED",
+     "product_name": "10Pcs SH1.0 to Dupont line electronic wire"}
+  ]}}, "request_id": "x"}}
