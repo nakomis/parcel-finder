@@ -25,7 +25,8 @@ def test_recent_orders_parses_claude_json(monkeypatch):
     calls = []
     monkeypatch.setattr(subprocess, "run", fake_run(calls))
     orders, ae_ids = gmail.recent_orders(date(2026, 10, 15), date(2026, 10, 22))
-    assert [o.title for o in orders] == ["Power Rotary Tool Kit 170W", "Kingston Fury Impact 32GB"]
+    assert [o.title for o in orders if o.shop != "aliexpress"] == ["Power Rotary Tool Kit 170W", "Kingston Fury Impact 32GB"]
+    assert [(o.order_id, o.title) for o in orders if o.shop == "aliexpress"] == [("3076931683840500", "")]
     assert orders[0].ordered_at == datetime.fromisoformat("2026-10-21T11:05:53+00:00")
     assert ae_ids == {"3076931683840500": ["https://ae01.alicdn.com/kf/x.jpg"]}
 

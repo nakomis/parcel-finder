@@ -17,8 +17,8 @@ def register_route(path: str, fn: Callable[[dict[str, list[str]]], tuple[int, st
     _ROUTES[path] = fn
 
 
-def make_server(handler: Callable[[Path], None], host: str = config.HOST,
-                port: int = config.PORT) -> ThreadingHTTPServer:
+def make_server(handler: Callable[[Path], None], host: str = config.HOST, port: int = config.PORT,
+                allowed_root: Path = config.SCREENEYE_DIR) -> ThreadingHTTPServer:
     if host != "127.0.0.1":
         raise ValueError("parcel-finder only listens on 127.0.0.1")
     jobs: "queue.Queue[Path]" = queue.Queue()
@@ -56,6 +56,12 @@ def make_server(handler: Callable[[Path], None], host: str = config.HOST,
         def do_POST(self):
             if urllib.parse.urlparse(self.path).path != "/photo":
                 return self._reply(404, {"error": "not found"})
+            # A web page can POST text/plain to localhost without a CORS preflight; JSON forces one,
+            # which this server never answers. The Host check stops DNS rebinding.
+            if not self.headers.get("Content-Type", "").startswith("application/json"):
+                return self._reply(415, {"error": "expected application/json"})
+            if self.headers.get("Host", "").rsplit(":", 1)[0] not in ("127.0.0.1", "localhost"):
+                return self._reply(403, {"error": "forbidden host"})
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                 photo = Path(body["path"]).expanduser()
@@ -63,6 +69,8 @@ def make_server(handler: Callable[[Path], None], host: str = config.HOST,
                 return self._reply(400, {"error": 'expected JSON {"path": "..."}'})
             if not photo.is_file():
                 return self._reply(400, {"error": f"no such file: {photo}"})
+            if not photo.resolve().is_relative_to(allowed_root.resolve()):
+                return self._reply(403, {"error": f"photos must be under {allowed_root}"})
             jobs.put(photo)
             self._reply(202, {"queued": True, "path": str(photo)})
 

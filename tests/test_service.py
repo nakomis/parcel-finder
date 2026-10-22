@@ -10,11 +10,12 @@ from parcel_finder.service import make_server
 
 
 @pytest.fixture
-def serve():
+def serve(tmp_path):
+    root = tmp_path
     servers = []
 
     def _start(handler):
-        srv = make_server(handler, port=0)
+        srv = make_server(handler, port=0, allowed_root=root)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         servers.append(srv)
         return f"http://127.0.0.1:{srv.server_address[1]}"

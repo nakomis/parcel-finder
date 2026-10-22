@@ -14,7 +14,7 @@ PORT = 8765
 
 SHARE_ROOT = Path("/Volumes/share/parcel-finder")
 LOG_DIR = HOME / "Library/Logs/parcel-finder"
-INBOX_DIR = HOME / "Pictures/ScreenEye/parcel-finder"
+SCREENEYE_DIR = HOME / "Pictures/ScreenEye"  # the only place /photo accepts pictures from
 SESSIONS_DIR = HOME / ".claude/sessions"
 PROJECTS_DIR = HOME / ".claude/projects"
 META_MCP_CONFIG = HOME / "repos/nakomis/mcps/meta-mcp/config.toml"
@@ -47,5 +47,9 @@ def secret(service: str, account: str) -> str:
 
 
 def store_secret(service: str, account: str, value: str) -> None:
-    subprocess.run(["security", "add-generic-password", "-U", "-s", service, "-a", account, "-w", value],
-                   check=True, capture_output=True)
+    try:
+        subprocess.run(["security", "add-generic-password", "-U", "-s", service, "-a", account, "-w", value],
+                       check=True, capture_output=True)
+    except (subprocess.CalledProcessError, OSError):
+        # The exception would carry argv, and so the secret, into logs and notifications.
+        raise RuntimeError(f"could not store keychain item {service}/{account}") from None

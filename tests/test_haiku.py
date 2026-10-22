@@ -22,7 +22,7 @@ def resp(text, stop="end_turn"):
 def test_ask_json_sends_schema_and_images(monkeypatch):
     fake = FakeClient(resp('{"item": "x"}'))
     monkeypatch.setattr(haiku, "_client", lambda: fake)
-    assert haiku.ask_json("q", [b"\xff\xd8jpg"], {"type": "object"}) == {"item": "x"}
+    assert haiku.ask_json("q", [b"\xff\xd8\xffjpg"], {"type": "object"}) == {"item": "x"}
     call = fake.calls[0]
     assert call["model"] == "claude-haiku-5-5"
     assert call["output_config"]["format"] == {"type": "json_schema", "schema": {"type": "object"}}

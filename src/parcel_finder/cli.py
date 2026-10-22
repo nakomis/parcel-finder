@@ -124,16 +124,18 @@ def authorise(args) -> int:
 
 
 def refresh(args) -> int:
+    """Timer job: refresh the AliExpress tokens, then sync order emails whatever happened to them."""
     from .orders.aliexpress import AliExpress, Reauthorise
     from . import ui
+    status = 0
     try:
         AliExpress.from_keychain().refresh()
-    except Reauthorise as e:
+        print("refreshed")
+    except (Reauthorise, config.MissingSecret) as e:
         ui.notify("parcel-finder", "AliExpress needs re-authorising: run `parcel-finder authorise`")
         print(f"reauthorise needed: {e}")
-        return 1
-    print("refreshed")
-    return sync_orders(args)
+        status = 1
+    return sync_orders(args) or status
 
 
 def sync_orders(args) -> int:

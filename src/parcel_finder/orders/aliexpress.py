@@ -6,12 +6,15 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from .. import config
 from .model import Order
 
 REFRESH_MARGIN_MS = 2 * 3600 * 1000
+# gmt_create is China time: order 3076931683840500's gmt_create 05:54:41 = paid 21:54:49Z.
+AE_TZ = ZoneInfo("Asia/Shanghai")
 
 
 class Reauthorise(Exception):
@@ -34,7 +37,12 @@ def _post(url: str, params: dict[str, str]) -> dict:
         with urllib.request.urlopen(req, timeout=20) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
-        return json.loads(e.read() or b"{}")
+        try:
+            return json.loads(e.read() or b"{}")
+        except ValueError:
+            raise ApiError(f"HTTP {e.code} from {url}") from None
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        raise ApiError(f"{url}: {e}") from None
 
 
 class KeychainTokenStore:
@@ -112,17 +120,27 @@ class AliExpress:
         p["sign"] = sign(p, self.secret)
         return _post(config.AE_GATEWAY, p)
 
+    def _order(self, oid: str) -> list[Order]:
+        r = self._call("aliexpress.trade.ds.order.get", single_order_query=json.dumps({"order_id": oid}))
+        result = r.get("aliexpress_trade_ds_order_get_response", {}).get("result")
+        if not result:
+            raise ApiError(f"order {oid}: {r.get('error_response') or r}")
+        when = datetime.strptime(result["gmt_create"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=AE_TZ)
+        when = when.astimezone(timezone.utc)
+        return [Order("aliexpress", oid, line["product_name"], when, result.get("order_status", ""),
+                      str(line.get("product_id") or "") or None)
+                for line in result.get("child_order_list", {}).get("aeop_child_order_info", [])
+                if line.get("end_reason") != "CANCELED"]
+
     def orders(self, order_ids: list[str]) -> list[Order]:
-        out = []
+        return [o for oid in order_ids for o in self._order(oid)]
+
+    def orders_tolerant(self, order_ids: list[str]) -> tuple[list[Order], list[str]]:
+        """Like orders(), but one bad order doesn't lose the rest. Reauthorise still propagates."""
+        out, problems = [], []
         for oid in order_ids:
-            r = self._call("aliexpress.trade.ds.order.get", single_order_query=json.dumps({"order_id": oid}))
-            result = r.get("aliexpress_trade_ds_order_get_response", {}).get("result")
-            if not result:
-                raise ApiError(f"order {oid}: {r.get('error_response') or r}")
-            when = datetime.strptime(result["gmt_create"], "%Y-%m-%d %H:%M:%S")
-            for line in result.get("child_order_list", {}).get("aeop_child_order_info", []):
-                if line.get("end_reason") == "CANCELED":
-                    continue
-                out.append(Order("aliexpress", oid, line["product_name"], when,
-                                 result.get("order_status", ""), str(line.get("product_id") or "") or None))
-        return out
+            try:
+                out += self._order(oid)
+            except (ApiError, KeyError, ValueError, OSError) as e:  # URLError is an OSError
+                problems.append(f"{oid}: {e}")
+        return out, problems

@@ -29,7 +29,7 @@ def test_rank_without_order_uses_hits():
 
 
 def cand(sid, score):
-    return Candidate(sid, sid, "/p", ORDER_AT, 1, "snippet", score)
+    return Candidate(sid, sid, "/p", ORDER_AT, 5, "snippet", score)
 
 
 def test_choice_not_clear_without_order_match(monkeypatch):

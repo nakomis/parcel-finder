@@ -11,7 +11,8 @@ from .orders.model import OrderMatch
 
 BEFORE_ORDER = timedelta(hours=72)
 NEAR_ORDER_BOOST = 3.0
-CLOSE_RUNNER_UP = 0.75  # runner-up within 25 % of the winner means "not clear"
+CLOSE_RUNNER_UP = 0.75
+MIN_HITS_FOR_CLEAR = 2  # runner-up within 25 % of the winner means "not clear"
 
 
 @dataclass
@@ -104,12 +105,15 @@ def choose(ident: Identification, match: OrderMatch | None, candidates: list[Can
               "a basket: usually the one with the strongest match, close to the order date. General background "
               "research months earlier, or a later session that only talks about the parcel, is not it. "
               "Use an empty session_id if none of them plausibly is.\n\n" + listing)
-    out = haiku.ask_json(prompt, [], SCHEMA, max_tokens=800)
+    out = haiku.ask_json(prompt, [], SCHEMA)
     chosen = next((c for c in top if c.session_id == out["session_id"]), None)
     if not chosen:
         return SessionChoice(None, False, top, out["reason"])
     others = [c.score for c in top if c is not chosen]
-    clear = (match is not None and out["confidence"] == "high"
+    # Never wake a session unprompted on a guess (the spec's anti-goal): a confident order match, a
+    # confident pick, a winner with more than one matching message, and no close runner-up.
+    clear = (match is not None and match.confidence == "high" and out["confidence"] == "high"
+             and chosen.hits >= MIN_HITS_FOR_CLEAR
              and (not others or max(others) < CLOSE_RUNNER_UP * chosen.score))
     return SessionChoice(chosen, clear, top, out["reason"])
 

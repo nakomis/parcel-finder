@@ -7,6 +7,8 @@ from .sessions import Candidate
 
 def _osascript(script: str, *args: str) -> str:
     r = subprocess.run(["osascript", "-", *args], input=script, capture_output=True, text=True, timeout=600)
+    if r.returncode:
+        raise RuntimeError(f"osascript failed: {r.stderr.strip()[:200]}")
     return r.stdout.strip()
 
 

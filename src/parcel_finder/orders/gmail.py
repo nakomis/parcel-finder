@@ -2,7 +2,7 @@
 import json
 import subprocess
 import tempfile
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from .model import Order
 
@@ -51,9 +51,14 @@ def recent_orders(after: date, before: date) -> tuple[list[Order], dict[str, lis
     orders, ae = [], {}
     for o in found:
         when = datetime.fromisoformat(o["ordered_at"].replace("Z", "+00:00"))
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
         if o["shop"] == "aliexpress":
-            if o["order_id"]:
+            if o["order_id"] and o["status"] != "cancelled":
                 ae[o["order_id"]] = o["thumbnail_urls"]
+                # Kept (untitled) so matching can fall back on thumbnails + order time without the API.
+                orders.append(Order("aliexpress", o["order_id"], "", when, o["status"],
+                                    thumbnail_urls=o["thumbnail_urls"]))
             continue
         if o["status"] != "cancelled" and o["title"]:
             orders.append(Order(o["shop"], o["order_id"], o["title"], when, o["status"]))
