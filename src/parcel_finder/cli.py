@@ -176,6 +176,17 @@ def orders(args) -> int:
     return 0
 
 
+def find_sessions(args) -> int:
+    from . import sessions
+    from .identify import Identification
+    cands = sessions.search(args.query, None)
+    for c in cands[:5]:
+        print(f"{c.score:5.1f} {c.session_id} {c.title} ({c.hits} hits, last {c.when:%d %b})")
+    ch = sessions.choose(Identification(args.query, "medium", "", "cli", None), None, cands)
+    print(f"choice: {ch.chosen.title if ch.chosen else None} clear={ch.clear}: {ch.reason}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="parcel-finder")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -188,6 +199,9 @@ def main(argv: list[str] | None = None) -> int:
     o = sub.add_parser("orders", help="list orders")
     o.add_argument("ids", nargs="*", help="AliExpress order IDs")
     o.set_defaults(fn=orders)
+    f = sub.add_parser("sessions", help="find the session for a description")
+    f.add_argument("query")
+    f.set_defaults(fn=find_sessions)
     d = sub.add_parser("doctor", help="check everything the finder needs")
     d.add_argument("--skip", action="append", help="name of a check to skip")
     d.set_defaults(fn=doctor)
