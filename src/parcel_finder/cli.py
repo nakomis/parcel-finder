@@ -78,9 +78,24 @@ def doctor(args) -> int:
     return 1 if failed else 0
 
 
+def serve(args) -> int:
+    from .runlog import RunLog
+    from .service import make_server
+
+    def handle(photo):
+        # Replaced by pipeline.run in Task 8.
+        RunLog.start(photo).finish("received")
+
+    srv = make_server(handle)
+    print(f"parcel-finder listening on http://{config.HOST}:{config.PORT}", flush=True)
+    srv.serve_forever()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="parcel-finder")
     sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("serve", help="run the loopback service").set_defaults(fn=serve)
     d = sub.add_parser("doctor", help="check everything the finder needs")
     d.add_argument("--skip", action="append", help="name of a check to skip")
     d.set_defaults(fn=doctor)
