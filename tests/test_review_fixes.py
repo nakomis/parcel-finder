@@ -34,10 +34,17 @@ def test_rank_accepts_aliexpress_order_time(monkeypatch):
     assert sessions.rank(hits, around)[0].score > 1
 
 
-def test_gmail_time_without_zone_is_utc(monkeypatch):
-    out = {"structured_output": {"orders": [{"shop": "amazon", "order_id": "", "title": "Drill",
-           "ordered_at": "2026-10-21T11:05:53", "status": "ordered", "thumbnail_urls": []}]}}
-    monkeypatch.setattr(subprocess, "run", lambda a, **k: subprocess.CompletedProcess(a, 0, json.dumps(out), ""))
+def test_gmail_order_times_are_aware_utc(monkeypatch):
+    msg = {"id": "a", "internalDate": "1792580753000", "payload": {"headers": [
+        {"name": "From", "value": "auto-confirm@amazon.co.uk"}, {"name": "Subject", "value": "Ordered: \u2018Drill\u2019"}]}}
+
+    class Fake:
+        def search(self, q):
+            return ["a"]
+
+        def message(self, mid, full=False):
+            return msg
+    monkeypatch.setattr(gmail, "_client", lambda: Fake())
     orders, _ = gmail.recent_orders(date(2026, 10, 15), date(2026, 10, 22))
     assert orders[0].ordered_at.tzinfo is not None
 
@@ -174,7 +181,9 @@ def test_stale_cache_syncs_in_background(monkeypatch, tmp_path):
 
 
 def test_stale_after_is_longer_than_timer():
-    assert cache.STALE_AFTER > timedelta(hours=12)
+    import plistlib
+    plist = Path(__file__).parents[1] / "launchd" / "com.nakomis.parcel-finder.refresh.plist"
+    assert cache.STALE_AFTER > timedelta(seconds=plistlib.loads(plist.read_bytes())["StartInterval"])
 
 
 # I6: `refresh` syncs Gmail even when AliExpress needs re-authorising.

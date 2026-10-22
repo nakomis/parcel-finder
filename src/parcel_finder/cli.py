@@ -46,13 +46,9 @@ def _check_terminal() -> str:
 
 
 def _check_gmail() -> str:
-    r = subprocess.run(["claude", "-p", "--model", "haiku", "--no-session-persistence", "--output-format", "text",
-                        "--", "List the names of your tools containing 'Gmail', one per line. Do not call them."],
-                       capture_output=True, text=True, timeout=180, cwd=tempfile.gettempdir(),
-                       stdin=subprocess.DEVNULL)
-    if "mcp__claude_ai_Gmail__" not in r.stdout:
-        raise RuntimeError("Gmail connector not visible to claude -p")
-    return "Gmail connector visible"
+    from .google import Gmail
+    n = len(Gmail().search("category:purchases newer_than:7d"))
+    return f"Gmail API reachable ({n} purchase emails this week)"
 
 
 def _check_sessions() -> str:
@@ -60,7 +56,7 @@ def _check_sessions() -> str:
 
 
 CHECKS = [("Ollama OCR", _check_ollama), ("keychain", _check_secrets), ("share", _check_share),
-          ("Terminal automation", _check_terminal), ("claude -p Gmail", _check_gmail),
+          ("Terminal automation", _check_terminal), ("Gmail API", _check_gmail),
           ("sessions dir", _check_sessions)]
 
 
@@ -109,6 +105,13 @@ def register_callback() -> None:
         return 200, "parcel-finder: AliExpress authorised, you can close this tab."
 
     register_route("/aliexpress/callback", callback)
+
+
+def authorise_google(args) -> int:
+    from . import google
+    google.authorise()
+    print("Gmail authorised (read-only); refresh token stored in the keychain")
+    return 0
 
 
 def authorise(args) -> int:
@@ -198,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser("authorise", help="authorise the AliExpress app on your account")
     a.add_argument("--code", help="paste the ?code= by hand")
     a.set_defaults(fn=authorise)
+    sub.add_parser("authorise-google", help="one-off read-only Gmail consent").set_defaults(fn=authorise_google)
     sub.add_parser("refresh", help="refresh the AliExpress tokens and sync order emails").set_defaults(fn=refresh)
     sub.add_parser("sync", help="sync order emails from Gmail into the cache").set_defaults(fn=sync_orders)
     o = sub.add_parser("orders", help="list orders")

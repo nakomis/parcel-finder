@@ -9,7 +9,7 @@ from .model import Order
 
 CACHE_FILE = config.HOME / "Library/Application Support/parcel-finder/orders.json"
 WINDOW = timedelta(days=7)
-STALE_AFTER = timedelta(hours=13)  # longer than the 12-hourly refresh timer
+STALE_AFTER = timedelta(hours=2)  # longer than the hourly refresh timer (launchd/…refresh.plist)
 
 
 def windows(start: date, end: date) -> list[tuple[date, date]]:
