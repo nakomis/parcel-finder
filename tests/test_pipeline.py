@@ -125,3 +125,10 @@ def test_stage_exception_becomes_error_outcome(deps, photo_fixture):
     out = pipeline.run(photo_fixture, d)
     assert out.status == "error" and "ollama exploded" in out.detail
     assert any(out.run_id in n for n in deps.calls["notify"])
+
+
+def test_dry_run_never_asks(deps, photo_fixture):
+    d = replace(deps, choose=lambda i, m, c: SessionChoice(CAND, False, c, "close"))
+    d.calls = deps.calls
+    out = pipeline.run(photo_fixture, d, dry_run=True)
+    assert out.status == "dry-run" and deps.calls["choose"] == [] and "would ask" in out.detail

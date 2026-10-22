@@ -90,6 +90,9 @@ def run(photo: Path, deps: Deps | None = None, dry_run: bool = False) -> Outcome
         if not choice.candidates:
             return done("not-found", detail="no candidate sessions",
                         note=f"Couldn't find the conversation for the {item}; see run {log.run_id}")
+        if dry_run and not choice.clear:
+            return done("dry-run", choice.chosen.session_id if choice.chosen else None,
+                        detail="would ask: " + ", ".join(c.title for c in choice.candidates[:3]))
         session_id = choice.chosen.session_id if choice.clear else deps.ui_choose(choice.candidates, item)
         if not session_id:
             return done("cancelled")
