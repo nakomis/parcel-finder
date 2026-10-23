@@ -107,9 +107,9 @@ def run(photo: Path, deps: Deps | None = None, dry_run: bool = False, run_id: st
         titled = match is not None and bool(match.order.title)
         item = match.order.title if titled and match.confidence == "high" else ident.item
         from .identify import search_terms
-        # A titled order matched with at least medium confidence is the sharpest query; otherwise
-        # search on what we can see (a low-confidence or untitled match would only mislead).
-        query = match.order.title if titled and match.confidence != "low" else search_terms(ident)
+        # A titled order matched with high confidence is the sharpest query; otherwise search on what
+        # we can see. A medium match is a guess too: on 23 Oct one sent a PCB's search to a RAM order.
+        query = match.order.title if titled and match.confidence == "high" else search_terms(ident)
         candidates = deps.search(query, match.order.ordered_at if match else None)
         log.event("search", query=query, candidates=[(c.title, c.session_id, round(c.score, 1)) for c in candidates[:8]])
         try:
@@ -119,6 +119,7 @@ def run(photo: Path, deps: Deps | None = None, dry_run: bool = False, run_id: st
             from .sessions import SessionChoice
             choice = SessionChoice(candidates[0] if candidates else None, False, candidates[:8], f"choice failed: {e}")
         log.event("choice", chosen=choice.chosen.session_id if choice.chosen else None, clear=choice.clear,
+                  confidence=choice.confidence,
                   reason=choice.reason)
         if not choice.candidates:
             return done("not-found", detail="no candidate sessions",

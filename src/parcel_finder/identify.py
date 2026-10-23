@@ -70,7 +70,9 @@ def match_rule(toks: set[str]) -> str | None:
 
 _GENERIC = {"PWR", "RESET", "BOOT", "GND", "VCC", "3V", "5V", "3V3",
             # keyboard keys, when the photo catches a MacBook
-            "CONTROL", "OPTION", "COMMAND", "SHIFT", "RETURN", "DELETE", "ENTER", "CAPS", "LOCK", "ESC"}
+            "CONTROL", "OPTION", "COMMAND", "SHIFT", "RETURN", "DELETE", "ENTER", "CAPS", "LOCK", "ESC",
+            # the credit on every board Martin designs: it tells one from another not at all
+            "DESIGNED", "NAKOMIS", "NAKOMIS/C"}
 
 
 def is_informative(text: str | None) -> bool:
