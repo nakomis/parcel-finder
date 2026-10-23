@@ -142,3 +142,16 @@ def test_a_phone_job_runs_with_its_ocr_its_status_and_the_phones_pick_list(tmp_p
     phone.run_job(job, runs, run=fake_run)
     assert seen["run_id"] == status.run_id and seen["ocr"] == "SINT-100"
     assert seen["listener"] == status.on_event and seen["choose"] == status.choose
+
+
+def test_pair_shows_a_png_and_deletes_it(monkeypatch):
+    import builtins
+    import os
+    from parcel_finder import cli, config
+    stored, pngs = {}, []
+    monkeypatch.setattr(config, "store_secret", lambda svc, acct, v: stored.update({acct: v}))
+    monkeypatch.setattr(cli.subprocess, "run",
+                        lambda cmd, **kw: pngs.append(cmd[cmd.index("-o") + 1]) if cmd[0] == "qrencode" else None)
+    monkeypatch.setattr(builtins, "input", lambda *a: "")
+    assert cli.pair(None) == 0
+    assert len(stored["phone-token"]) >= 24 and pngs and not os.path.exists(pngs[0])
