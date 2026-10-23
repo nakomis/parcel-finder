@@ -1,16 +1,18 @@
 """Which recent order is the thing in the photo?"""
+import re
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .. import haiku
-from ..identify import Identification
+from ..identify import Identification, search_terms
 from .model import Order, OrderMatch
 
 MAX_TITLES = 20
 MAX_THUMBNAILS = 8
 STALE_DELIVERED = timedelta(days=14)
 _DONE = {"delivered", "completed", "FINISH"}
+_COMMON = {"board", "module", "with", "the", "and", "for", "pcs", "pcb", "set", "kit", "usb", "type"}
 
 SCHEMA = {
     "type": "object",
@@ -28,6 +30,10 @@ def _aware(t: datetime) -> datetime:
     return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
 
 
+def _words(s: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]{3,}", s.lower()) if w not in _COMMON}
+
+
 def _thumbnail(url: str) -> bytes | None:
     try:
         with urllib.request.urlopen(url, timeout=10) as r:
@@ -40,7 +46,11 @@ def match_order(photo: Path, ident: Identification, orders: list[Order],
                 now: datetime | None = None) -> OrderMatch | None:
     now = now or datetime.now(timezone.utc)
     candidates = [o for o in orders if not (o.status in _DONE and now - _aware(o.ordered_at) > STALE_DELIVERED)]
-    candidates = sorted(candidates, key=lambda o: _aware(o.ordered_at), reverse=True)[:MAX_TITLES]
+    # Titles sharing the item's words first, so a busy fortnight of orders can't push the right one off the list.
+    wanted = _words(search_terms(ident))
+    keep = {id(o) for o in sorted(candidates, key=lambda o: (len(wanted & _words(o.title)), _aware(o.ordered_at)),
+                                  reverse=True)[:MAX_TITLES]}
+    candidates = sorted((o for o in candidates if id(o) in keep), key=lambda o: _aware(o.ordered_at), reverse=True)
     if not candidates:
         return None
     images, lines = [photo.read_bytes()], []
