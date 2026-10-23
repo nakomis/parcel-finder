@@ -1,7 +1,6 @@
 import json
 import os
 import socket
-import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -47,7 +46,7 @@ def test_send_writes_auth_then_user(tmp_path):
     t.start()
     key = tmp_path / "123.abc.key"
     key.write_text("tok\n")
-    delivery._send_socket(LiveSession(123, Path(sock_path), key, None, tmp_path, "idle"), "hello")
+    send(LiveSession(123, Path(sock_path), key, None, tmp_path, "idle"), "hello")
     t.join(5)
     lines = [json.loads(line) for line in got[0].splitlines()]
     assert lines == [{"type": "auth", "token": "tok"},
@@ -77,30 +76,3 @@ def test_resume_command_quotes_message(monkeypatch):
     cmd = seen[0][0]
     assert cmd.startswith("cd '/w d' && claude --resume sid --allow-dangerously-skip-permissions ")
     assert "'it'\"'\"'s a \"tester\"'" in cmd
-
-
-def _relay_result(result="DONE", is_error=False):
-    import json as _json
-    return subprocess.CompletedProcess([], 0, _json.dumps({"result": result, "is_error": is_error}), "")
-
-
-def test_send_relays_through_a_bypass_claude_with_only_sendmessage(tmp_path, monkeypatch):
-    from parcel_finder import delivery
-    seen = {}
-    monkeypatch.setattr(delivery, "_run", lambda cmd, **kw: seen.update(cmd=cmd, env=kw["env"]) or _relay_result())
-    monkeypatch.setenv("CLAUDE_CODE_MESSAGING_TOKEN", "secret")
-    delivery.send(LiveSession(1, Path("/tmp/cc-socks/42.sock"), tmp_path / "k", None, tmp_path, "idle"), "It's a buzzer")
-    cmd = seen["cmd"]
-    assert "--dangerously-skip-permissions" in cmd
-    assert cmd[cmd.index("--tools") + 1] == "ToolSearch,SendMessage"   # nothing a photo's text could misuse
-    assert "uds:/tmp/cc-socks/42.sock" in cmd[-1] and "It's a buzzer" in cmd[-1]
-    assert "CLAUDE_CODE_MESSAGING_TOKEN" not in seen["env"]           # the relay is its own session
-
-
-def test_send_falls_back_to_the_socket_when_the_relay_fails(tmp_path, monkeypatch):
-    from parcel_finder import delivery
-    raw = []
-    monkeypatch.setattr(delivery, "_run", lambda cmd, **kw: _relay_result("SendMessage failed", True))
-    monkeypatch.setattr(delivery, "_send_socket", lambda live, text: raw.append(text))
-    delivery.send(LiveSession(1, Path("/tmp/cc-socks/42.sock"), tmp_path / "k", None, tmp_path, "idle"), "hi")
-    assert raw == ["hi"]
