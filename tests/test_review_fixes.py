@@ -168,14 +168,13 @@ def test_one_bad_aliexpress_order_keeps_the_rest(monkeypatch):
 
 # I5: a stale cache never blocks a run; it is refreshed in the background.
 def test_stale_cache_syncs_in_background(monkeypatch, tmp_path):
-    c = cache.OrderCache(tmp_path / "orders.json")
+    c = cache.OrderCache(tmp_path / "orders.sqlite")
     c.merge([], {}, synced_to=date(2026, 10, 1))
     c.synced_at = datetime.now() - timedelta(days=2)
     started = []
     monkeypatch.setattr(cache, "OrderCache", lambda: c)
     monkeypatch.setattr(cache, "sync", lambda *a, **k: (_ for _ in ()).throw(AssertionError("blocking sync")))
     monkeypatch.setattr(pipeline, "_start_background_sync", lambda: started.append(True))
-    monkeypatch.setattr(pipeline, "_aliexpress_orders", lambda ids: ([], None, set()))
     pipeline.collect_orders()
     assert started == [True]
 
@@ -205,28 +204,25 @@ def test_refresh_syncs_even_when_reauthorise(monkeypatch):
 # I7: with the API unavailable, AliExpress orders still come from the emails.
 def test_aliexpress_falls_back_to_email_orders(monkeypatch, tmp_path):
     t = datetime.now(timezone.utc) - timedelta(days=3)
-    c = cache.OrderCache(tmp_path / "orders.json")
+    c = cache.OrderCache(tmp_path / "orders.sqlite")
     c.merge([Order("aliexpress", "777", "", t, "shipped", thumbnail_urls=["https://x/a.jpg"])],
             {"777": ["https://x/a.jpg"]}, synced_to=date.today())
+    c.set_ae_problem("refresh token missing or lapsed")
     monkeypatch.setattr(cache, "OrderCache", lambda: c)
-    monkeypatch.setattr(pipeline, "_aliexpress_orders", lambda ids: (None, "refresh token missing or lapsed", set(ids)))
+    monkeypatch.setattr(pipeline, "_start_background_sync", lambda: None)
     found, problem = pipeline.collect_orders()
     assert [(o.shop, o.order_id) for o in found] == [("aliexpress", "777")] and problem
     assert found[0].thumbnail_urls
 
 
 # I8: only AliExpress orders inside the window are looked up.
-def test_only_recent_aliexpress_ids_are_queried(monkeypatch, tmp_path):
+def test_only_recent_aliexpress_ids_are_queried(tmp_path):
     now = datetime.now(timezone.utc)
-    c = cache.OrderCache(tmp_path / "orders.json")
+    c = cache.OrderCache(tmp_path / "orders.sqlite")
     c.merge([Order("aliexpress", "new", "", now - timedelta(days=5), "shipped"),
              Order("aliexpress", "old", "", now - timedelta(days=200), "completed")],
             {"new": [], "old": []}, synced_to=date.today())
-    asked = []
-    monkeypatch.setattr(cache, "OrderCache", lambda: c)
-    monkeypatch.setattr(pipeline, "_aliexpress_orders", lambda ids: asked.append(sorted(ids)) or ([], None, set()))
-    pipeline.collect_orders()
-    assert asked == [["new"]]
+    assert cache.ae_ids_to_fetch(c, now) == ["new"]
 
 
 # I9: image media types come from the bytes; non-images are dropped.
@@ -293,14 +289,14 @@ def test_choose_failure_falls_back_to_pick_list(tmp_path, photo_fixture):
 
 # Found in the end-to-end run: AliExpress IDs known only from thumbnails (no dated email order).
 def test_undated_aliexpress_ids_are_still_queried(monkeypatch, tmp_path):
-    from datetime import date as _date
     now = datetime.now(timezone.utc)
-    c = cache.OrderCache(tmp_path / "orders.json")
-    c.merge([], {"legacy": ["https://x/t.jpg"]}, synced_to=_date.today())
+    c = cache.OrderCache(tmp_path / "orders.sqlite")
+    c.merge([], {"legacy": ["https://x/t.jpg"]}, synced_to=date.today())
+    assert cache.ae_ids_to_fetch(c, now) == ["legacy"]
+    c.put_ae_detail("legacy", "FINISH", [Order("aliexpress", "legacy", "Buzzer", now - timedelta(days=3), "FINISH"),
+                                        Order("aliexpress", "legacy", "Ancient thing", now - timedelta(days=300), "FINISH")])
     monkeypatch.setattr(cache, "OrderCache", lambda: c)
-    monkeypatch.setattr(pipeline, "_aliexpress_orders", lambda ids: (
-        [Order("aliexpress", "legacy", "Buzzer", now - timedelta(days=3), "shipped"),
-         Order("aliexpress", "legacy", "Ancient thing", now - timedelta(days=300), "FINISH")], None, set()))
+    monkeypatch.setattr(pipeline, "_start_background_sync", lambda: None)
     found, _ = pipeline.collect_orders()
     assert [o.title for o in found] == ["Buzzer"] and found[0].thumbnail_urls == ["https://x/t.jpg"]
 
@@ -343,14 +339,15 @@ def test_untitled_order_never_becomes_the_query(tmp_path, photo_fixture):
 
 
 def test_api_answered_orders_do_not_fall_back(monkeypatch, tmp_path):
-    from datetime import date as _date
     now = datetime.now(timezone.utc)
-    c = cache.OrderCache(tmp_path / "orders.json")
+    c = cache.OrderCache(tmp_path / "orders.sqlite")
     c.merge([Order("aliexpress", "cancelled-one", "", now - timedelta(days=3), "delivered"),
              Order("aliexpress", "unreachable", "", now - timedelta(days=3), "shipped")],
-            {"cancelled-one": [], "unreachable": []}, synced_to=_date.today())
+            {"cancelled-one": [], "unreachable": []}, synced_to=date.today())
+    # The API answered for cancelled-one (no live lines) but hasn't reached unreachable yet.
+    c.put_ae_detail("cancelled-one", "FINISH", [])
+    started = []
     monkeypatch.setattr(cache, "OrderCache", lambda: c)
-    # The API answered for cancelled-one (no live lines) but failed for unreachable.
-    monkeypatch.setattr(pipeline, "_aliexpress_orders", lambda ids: ([], "unreachable: network down", {"unreachable"}))
+    monkeypatch.setattr(pipeline, "_start_background_sync", lambda: started.append(True))
     found, _ = pipeline.collect_orders()
-    assert [o.order_id for o in found] == ["unreachable"]
+    assert [o.order_id for o in found] == ["unreachable"] and started  # unfetched: top up in the background

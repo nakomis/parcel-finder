@@ -120,17 +120,22 @@ class AliExpress:
         p["sign"] = sign(p, self.secret)
         return _post(config.AE_GATEWAY, p)
 
-    def _order(self, oid: str) -> list[Order]:
+    def order_detail(self, oid: str) -> tuple[str, list[Order]]:
+        """The order's status and its live lines (cancelled lines left out; none means cancelled)."""
         r = self._call("aliexpress.trade.ds.order.get", single_order_query=json.dumps({"order_id": oid}))
         result = r.get("aliexpress_trade_ds_order_get_response", {}).get("result")
         if not result:
             raise ApiError(f"order {oid}: {r.get('error_response') or r}")
         when = datetime.strptime(result["gmt_create"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=AE_TZ)
         when = when.astimezone(timezone.utc)
-        return [Order("aliexpress", oid, line["product_name"], when, result.get("order_status", ""),
-                      str(line.get("product_id") or "") or None)
-                for line in result.get("child_order_list", {}).get("aeop_child_order_info", [])
-                if line.get("end_reason") != "CANCELED"]
+        status = result.get("order_status", "")
+        return status, [Order("aliexpress", oid, line["product_name"], when, status,
+                              str(line.get("product_id") or "") or None)
+                        for line in result.get("child_order_list", {}).get("aeop_child_order_info", [])
+                        if line.get("end_reason") != "CANCELED"]
+
+    def _order(self, oid: str) -> list[Order]:
+        return self.order_detail(oid)[1]
 
     def orders(self, order_ids: list[str]) -> list[Order]:
         return [o for oid in order_ids for o in self._order(oid)]
