@@ -13,6 +13,9 @@ BEFORE_ORDER = timedelta(hours=72)
 NEAR_ORDER_BOOST = 3.0
 CLOSE_RUNNER_UP = 0.75
 MIN_HITS_FOR_CLEAR = 2  # runner-up within 25 % of the winner means "not clear"
+# Without a confident order match (JLCPCB boards have none), a winner this far ahead is clear too.
+DOMINANT = 5.0
+MIN_HITS_DOMINANT = 8
 
 
 @dataclass
@@ -32,6 +35,7 @@ class SessionChoice:
     clear: bool
     candidates: list[Candidate]
     reason: str
+    confidence: str | None = None  # Haiku's, in its pick
 
 
 # Runs inside conversation-memory's own project, the way ~/scripts/cjump does.
@@ -95,6 +99,8 @@ def choose(ident: Identification, match: OrderMatch | None, candidates: list[Can
     if not candidates:
         return SessionChoice(None, False, [], "no candidate sessions")
     top = candidates[:8]
+    if match is not None and match.confidence != "high":
+        match = None  # a guess at the closest order would only mislead the choice
     bought = (f"It matches the order \"{match.order.title}\" ({match.order.shop}, ordered "
               f"{match.order.ordered_at:%d %b %Y %H:%M} UTC).\n" if match else "")
     listing = "\n".join(f"- {c.session_id} | {c.title} | {c.project} | last hit {c.when:%d %b %Y} | "
@@ -110,12 +116,20 @@ def choose(ident: Identification, match: OrderMatch | None, candidates: list[Can
     if not chosen:
         return SessionChoice(None, False, top, out["reason"])
     others = [c.score for c in top if c is not chosen]
-    # Never wake a session unprompted on a guess (the spec's anti-goal): a confident order match, a
-    # confident pick, a winner with more than one matching message, and no close runner-up.
-    clear = (match is not None and match.confidence == "high" and out["confidence"] == "high"
-             and chosen.hits >= MIN_HITS_FOR_CLEAR
-             and (not others or max(others) < CLOSE_RUNNER_UP * chosen.score))
-    return SessionChoice(chosen, clear, top, out["reason"])
+    # Never wake a session unprompted on a guess (the spec's anti-goal): a confident pick, with a
+    # confident order match, a winner with more than one matching message, and no close runner-up.
+    # Or, with no confident order match (so the search ran on what's visible on the item, not on
+    # an order's title), a confident pick far ahead of the rest on plenty of hits.
+    runner_up = max(others, default=0.0)
+    ordered = (match is not None and match.confidence == "high" and chosen.hits >= MIN_HITS_FOR_CLEAR
+               and runner_up < CLOSE_RUNNER_UP * chosen.score)
+    # Haiku hedges (medium) on boards Martin designed, since nothing was bought in a conversation:
+    # here a medium pick will do, as long as it is the leader.
+    leader = max(top, key=lambda c: c.score)
+    dominant = (match is None and chosen is leader and out["confidence"] in ("high", "medium")
+                and chosen.hits >= MIN_HITS_DOMINANT and chosen.score >= DOMINANT * runner_up)
+    clear = (out["confidence"] == "high" and ordered) or dominant
+    return SessionChoice(chosen, clear, top, out["reason"], out["confidence"])
 
 
 def local_transcript(session_id: str) -> Path | None:

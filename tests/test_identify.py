@@ -133,3 +133,10 @@ def test_identify_uses_the_phones_ocr_instead_of_ollama(monkeypatch, tmp_path, p
     r = identify.identify(photo_fixture, RunLog.start(photo_fixture, tmp_path),
                           ocr_text="SINT-100 FRONT jaw pins 1-120\nDesigned by Nakomis/C")
     assert "SINT-100 FRONT jaw" in seen["p"] and r.ocr_text.startswith("SINT-100")
+
+
+def test_search_terms_skip_the_credit_on_every_nakomis_board():
+    ident = identify.Identification("SINT-100 BACK jaw board", "high", "", "haiku",
+                                    "Designed by Nakomis/C\nKappa\nVDDSPD\nRESET#")
+    terms = identify.search_terms(ident)
+    assert "Designed" not in terms and "Nakomis" not in terms and "VDDSPD" in terms

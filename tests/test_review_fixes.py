@@ -351,3 +351,12 @@ def test_api_answered_orders_do_not_fall_back(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline, "_start_background_sync", lambda: started.append(True))
     found, _ = pipeline.collect_orders()
     assert [o.order_id for o in found] == ["unreachable"] and started  # unfetched: top up in the background
+
+def test_a_medium_order_match_never_becomes_the_query(tmp_path, photo_fixture):
+    d, calls = _deps(tmp_path)
+    queries = []
+    m = OrderMatch(Order("ebay", "", "Kingston Fury Impact 32GB", datetime.now(timezone.utc), "x"), "medium", "only memory")
+    d = replace(d, collect_orders=lambda: ([m.order], None), match_order=lambda *a: m,
+                search=lambda q, a: queries.append(q) or [])
+    pipeline.run(photo_fixture, d)
+    assert queries[0] == "buzzer"
