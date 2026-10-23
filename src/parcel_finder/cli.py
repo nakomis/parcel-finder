@@ -114,17 +114,27 @@ def _serve_phone(enqueue) -> None:
 
 
 def pair(args) -> int:
-    """A new phone token (replacing any old one), shown once as a QR code for ScreenEye to scan."""
+    """A new phone token (replacing any old one), shown once as a QR code for ScreenEye to scan.
+    The code opens as a PNG in Preview (a terminal's line spacing breaks it up) and is deleted after."""
+    import os
     import secrets
     import shutil
-    import subprocess
     token = secrets.token_urlsafe(24)
     config.store_secret(*config.PHONE_TOKEN, token)
     payload = json.dumps({"parcel_finder_token": token})
     if shutil.which("qrencode"):
-        subprocess.run(["qrencode", "-t", "ANSIUTF8", payload])
-    print(f"Scan this with ScreenEye (Settings → Pair with parcel-finder), or type the token:\n  {token}")
-    print("Then restart the service: launchctl kickstart -k gui/$(id -u)/com.nakomis.parcel-finder")
+        fd, png = tempfile.mkstemp(prefix="parcel-finder-pair-", suffix=".png")
+        os.close(fd)
+        try:
+            subprocess.run(["qrencode", "-s", "12", "-m", "4", "-o", png, payload], check=True)
+            subprocess.run(["open", "-a", "Preview", png])
+            print("Scan the code in Preview with ScreenEye (Settings → Scan pairing code).")
+            input("Press Return once the phone says it's paired… ")
+        finally:
+            os.unlink(png)
+    else:
+        print(f"Paste this token into ScreenEye (Settings → parcel-finder):\n  {token}")
+    print("Now restart the service: launchctl kickstart -k gui/$(id -u)/com.nakomis.parcel-finder")
     return 0
 
 
