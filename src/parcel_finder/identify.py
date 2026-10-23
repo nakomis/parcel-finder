@@ -100,16 +100,17 @@ PROMPT = ("This is a photo of an electronics item that has just arrived in a par
           "it, and use low confidence when you are inferring rather than reading.")
 
 
-def identify(photo: Path, log: RunLog) -> Identification:
-    text = ocr(photo)
-    log.event("ocr", text=text, available=text is not None)
+def identify(photo: Path, log: RunLog, ocr_text: str | None = None) -> Identification:
+    """ocr_text: what the phone's Vision read, if the run came from the phone (Ollama isn't asked)."""
+    text = ocr_text if ocr_text is not None else ocr(photo)
+    log.event("ocr", text=text, available=text is not None, source="phone" if ocr_text is not None else "ollama")
     if text:
         verdict = match_rule(tokens(text))
         if verdict:
             log.event("rule", verdict=verdict)
             return Identification(verdict, "high", "pin labels: " + " ".join(sorted(tokens(text))), "rule", text)
     informative = is_informative(text)
-    hint = (f"A local OCR model read this text from it (may contain typos):\n{text}\n\n" if informative else "")
+    hint = (f"OCR read this text from it (may contain typos):\n{text}\n\n" if informative else "")
     out = haiku.ask_json(PROMPT.format(hint=hint), [photo.read_bytes()], SCHEMA)
     source = "haiku" if informative else "haiku-image-only"
     log.event("identify", source=source, **out)

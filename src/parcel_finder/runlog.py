@@ -19,13 +19,14 @@ def redact(value):
 
 
 class RunLog:
-    def __init__(self, run_id: str, log_dir: Path):
-        self.run_id, self.log_dir = run_id, log_dir
+    def __init__(self, run_id: str, log_dir: Path, listener=None):
+        self.run_id, self.log_dir, self.listener = run_id, log_dir, listener  # listener(stage, data): progress
 
     @classmethod
-    def start(cls, photo: Path, log_dir: Path = config.LOG_DIR) -> "RunLog":
+    def start(cls, photo: Path, log_dir: Path = config.LOG_DIR, run_id: str | None = None,
+              listener=None) -> "RunLog":
         log_dir.mkdir(parents=True, exist_ok=True)
-        log = cls(f"{datetime.now():%Y%m%d-%H%M%S}-{secrets.token_hex(2)}", log_dir)
+        log = cls(run_id or f"{datetime.now():%Y%m%d-%H%M%S}-{secrets.token_hex(2)}", log_dir, listener)
         log.event("start", photo=str(photo))
         return log
 
@@ -34,6 +35,8 @@ class RunLog:
                   "run_id": self.run_id, "stage": stage, **redact(data)}
         with open(self.log_dir / "runs.jsonl", "a") as f:
             f.write(json.dumps(record, default=str) + "\n")
+        if self.listener:
+            self.listener(stage, data)
 
     def finish(self, outcome: str, **data) -> None:
         self.event("finish", outcome=outcome, **data)

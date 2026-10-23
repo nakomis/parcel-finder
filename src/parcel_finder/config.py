@@ -11,6 +11,8 @@ OCR_PROMPT = "Text Recognition:"
 
 HOST = "127.0.0.1"
 PORT = 8775  # 8765 is taken by the playlist backend (all interfaces)
+LAN_PORT = 8776  # the phone's listener (all interfaces, paired token)
+PHONE_TOKEN = ("parcel-finder", "phone-token")
 
 SHARE_ROOT = Path("/Volumes/share/parcel-finder")
 LOG_DIR = HOME / "Library/Logs/parcel-finder"

@@ -122,3 +122,14 @@ def test_search_terms_use_name_and_distinctive_ocr_words():
 def test_search_terms_skip_keyboard_keys():   # a photo over a MacBook caught "fn control option"
     ident = identify.Identification("SOP-24 adapter", "high", "", "haiku", "fn\ncontrol\noption\ncommand\nSOP24PIN")
     assert identify.search_terms(ident) == "SOP-24 adapter SOP24PIN"
+
+
+def test_identify_uses_the_phones_ocr_instead_of_ollama(monkeypatch, tmp_path, photo_fixture):
+    seen = {}
+    monkeypatch.setattr(identify, "ocr", lambda p: (_ for _ in ()).throw(AssertionError("Ollama called")))
+    monkeypatch.setattr(identify.haiku, "ask_json",
+                        lambda prompt, images, schema, **k: seen.setdefault("p", prompt) and
+                        {"name": "SINT-100 jaw boards", "item": "x", "confidence": "high", "evidence": "silkscreen"})
+    r = identify.identify(photo_fixture, RunLog.start(photo_fixture, tmp_path),
+                          ocr_text="SINT-100 FRONT jaw pins 1-120\nDesigned by Nakomis/C")
+    assert "SINT-100 FRONT jaw" in seen["p"] and r.ocr_text.startswith("SINT-100")
