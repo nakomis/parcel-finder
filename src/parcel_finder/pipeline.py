@@ -24,39 +24,24 @@ def _start_background_sync() -> None:
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def _aliexpress_orders(order_ids: list[str]) -> tuple[list | None, str | None, set[str]]:
-    """API details for these orders, a problem summary, and the IDs the API couldn't answer.
-    (None, why, all IDs) when the API can't be used at all."""
-    from .orders.aliexpress import AliExpress, Reauthorise
-    try:
-        found, problems = AliExpress.from_keychain().orders_tolerant(order_ids)
-    except (Reauthorise, config.MissingSecret) as e:
-        return None, str(e), set(order_ids)
-    summary = "; ".join(f"{oid}: {why}" for oid, why in list(problems.items())[:3]) or None
-    return found, summary, set(problems)
-
-
 def collect_orders() -> tuple[list, str | None]:
-    """Recent orders from the cache plus AliExpress details. Never blocks on Gmail: a stale cache is
-    refreshed in the background. Without the API, AliExpress orders fall back to their emails."""
+    """Recent orders from the local store: no network calls. A stale store, or AliExpress orders
+    whose details haven't been fetched yet, start a background sync; meanwhile those orders fall
+    back to their emails (untitled; matched by thumbnail)."""
     from .orders import cache
     c = cache.OrderCache()
-    if c.stale():
-        _start_background_sync()
     cutoff = datetime.now(timezone.utc) - timedelta(days=config.ORDER_WINDOW_DAYS)
+    details, ae_ids = c.ae_details(), c.ae_ids
     others = [o for o in c.orders if o.shop != "aliexpress"]
     ae_email = [o for o in c.orders if o.shop == "aliexpress" and _aware(o.ordered_at) >= cutoff]
-    dated = {o.order_id for o in c.orders if o.shop == "aliexpress"}
-    undated = [oid for oid in c.ae_ids if oid not in dated]  # known only from thumbnails (older caches)
-    api, problem, unanswered = _aliexpress_orders([o.order_id for o in ae_email] + undated)
-    api = [o for o in api if _aware(o.ordered_at) >= cutoff] if api is not None else None
-    for o in api or []:
-        o.thumbnail_urls = c.ae_ids.get(o.order_id, [])
-    # Only orders the API couldn't answer fall back to their emails (untitled; matched by thumbnail).
-    # An order the API answered with no live lines was cancelled: it stays out.
-    fallback = [replace(o, thumbnail_urls=c.ae_ids.get(o.order_id, o.thumbnail_urls))
-                for o in ae_email if o.order_id in unanswered]
-    return others + (api or []) + fallback, problem
+    # An order whose details have no live lines was cancelled: it stays out.
+    fetched = [replace(line, thumbnail_urls=ae_ids.get(oid, []))
+               for oid, (_, lines) in details.items() for line in lines if _aware(line.ordered_at) >= cutoff]
+    fallback = [replace(o, thumbnail_urls=ae_ids.get(o.order_id, o.thumbnail_urls))
+                for o in ae_email if o.order_id not in details]
+    if c.stale() or fallback:
+        _start_background_sync()
+    return others + fetched + fallback, c.ae_problem
 
 
 def _aware(t: datetime) -> datetime:

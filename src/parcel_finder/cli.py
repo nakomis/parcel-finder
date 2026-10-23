@@ -143,7 +143,13 @@ def refresh(args) -> int:
 
 def sync_orders(args) -> int:
     from .orders import cache
-    cache.sync(cache.OrderCache())
+    from .orders.aliexpress import AliExpress
+    problems = cache.sync(cache.OrderCache(), aliexpress=AliExpress.from_keychain)
+    if problems is None:
+        print("another sync is running")
+        return 0
+    for oid, why in problems.items():
+        print(f"AliExpress order {oid}: {why}")
     print("orders synced")
     return 0
 
