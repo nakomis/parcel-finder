@@ -24,14 +24,16 @@ def _start_background_sync() -> None:
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def _aliexpress_orders(order_ids: list[str]) -> tuple[list | None, str | None]:
-    """API details for these orders; (None, why) when the API can't be used at all."""
+def _aliexpress_orders(order_ids: list[str]) -> tuple[list | None, str | None, set[str]]:
+    """API details for these orders, a problem summary, and the IDs the API couldn't answer.
+    (None, why, all IDs) when the API can't be used at all."""
     from .orders.aliexpress import AliExpress, Reauthorise
     try:
         found, problems = AliExpress.from_keychain().orders_tolerant(order_ids)
     except (Reauthorise, config.MissingSecret) as e:
-        return None, str(e)
-    return found, ("; ".join(problems[:3]) or None)
+        return None, str(e), set(order_ids)
+    summary = "; ".join(f"{oid}: {why}" for oid, why in list(problems.items())[:3]) or None
+    return found, summary, set(problems)
 
 
 def collect_orders() -> tuple[list, str | None]:
@@ -46,14 +48,14 @@ def collect_orders() -> tuple[list, str | None]:
     ae_email = [o for o in c.orders if o.shop == "aliexpress" and _aware(o.ordered_at) >= cutoff]
     dated = {o.order_id for o in c.orders if o.shop == "aliexpress"}
     undated = [oid for oid in c.ae_ids if oid not in dated]  # known only from thumbnails (older caches)
-    api, problem = _aliexpress_orders([o.order_id for o in ae_email] + undated)
+    api, problem, unanswered = _aliexpress_orders([o.order_id for o in ae_email] + undated)
     api = [o for o in api if _aware(o.ordered_at) >= cutoff] if api is not None else None
-    got = {o.order_id for o in api or []}
     for o in api or []:
         o.thumbnail_urls = c.ae_ids.get(o.order_id, [])
-    fallback = [replace(o, title=o.title or f"AliExpress order {o.order_id} (title unknown: see its product image)",
-                        thumbnail_urls=c.ae_ids.get(o.order_id, o.thumbnail_urls))
-                for o in ae_email if o.order_id not in got]
+    # Only orders the API couldn't answer fall back to their emails (untitled; matched by thumbnail).
+    # An order the API answered with no live lines was cancelled: it stays out.
+    fallback = [replace(o, thumbnail_urls=c.ae_ids.get(o.order_id, o.thumbnail_urls))
+                for o in ae_email if o.order_id in unanswered]
     return others + (api or []) + fallback, problem
 
 
@@ -115,8 +117,12 @@ def run(photo: Path, deps: Deps | None = None, dry_run: bool = False) -> Outcome
             match = None
         log.event("match", order=match.order.title if match else None, shop=match.order.shop if match else None,
                   confidence=match.confidence if match else None, reason=match.reason if match else None)
-        item = match.order.title if match and match.confidence == "high" else ident.item
-        query = match.order.title if match else ident.item  # even a medium match is a good search hint
+        titled = match is not None and bool(match.order.title)
+        item = match.order.title if titled and match.confidence == "high" else ident.item
+        from .identify import search_terms
+        # A titled order matched with at least medium confidence is the sharpest query; otherwise
+        # search on what we can see (a low-confidence or untitled match would only mislead).
+        query = match.order.title if titled and match.confidence != "low" else search_terms(ident)
         candidates = deps.search(query, match.order.ordered_at if match else None)
         log.event("search", query=query, candidates=[(c.title, c.session_id, round(c.score, 1)) for c in candidates[:8]])
         try:

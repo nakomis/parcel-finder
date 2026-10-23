@@ -132,3 +132,13 @@ def test_dry_run_never_asks(deps, photo_fixture):
     d.calls = deps.calls
     out = pipeline.run(photo_fixture, d, dry_run=True)
     assert out.status == "dry-run" and deps.calls["choose"] == [] and "would ask" in out.detail
+
+
+def test_search_uses_short_name_and_ocr_terms(deps, photo_fixture):
+    queries = []
+    ident = Identification("SOP-24 adapter", "high", "", "haiku", "SOP24PIN 1.27MM", "a very long description")
+    d = replace(deps, identify=lambda p, log: ident, match_order=lambda *a: None,
+                search=lambda q, a: queries.append(q) or [CAND])
+    d.calls = deps.calls
+    pipeline.run(photo_fixture, d)
+    assert queries[0].startswith("SOP-24 adapter") and "SOP24PIN" in queries[0] and "long" not in queries[0]

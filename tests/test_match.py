@@ -34,3 +34,13 @@ def test_match_drops_long_delivered_orders(monkeypatch, photo_fixture):
 def test_match_with_no_candidates_skips_haiku(monkeypatch, photo_fixture):
     monkeypatch.setattr(match.haiku, "ask_json", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no call")))
     assert match.match_order(photo_fixture, IDENT, [], now=NOW) is None
+
+
+def test_match_keeps_an_older_order_whose_title_shares_the_items_words(monkeypatch, photo_fixture):
+    seen = {}
+    monkeypatch.setattr(match.haiku, "ask_json",
+                        lambda prompt, images, schema, **k: seen.setdefault("p", prompt) and {"index": -1, "confidence": "low", "reason": ""})
+    recent = [order(f"Cake tin {i}", days_ago=1) for i in range(match.MAX_TITLES + 10)]
+    ident = Identification("Core2350B RP2350 board with USB-C module", "medium", "labels", "haiku", None)
+    match.match_order(photo_fixture, ident, recent + [order("Raspberry Pi Pico 2 RP2350 Core2350B Core Board", days_ago=13)], now=NOW)
+    assert "Core2350B Core Board" in seen["p"]
