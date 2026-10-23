@@ -82,3 +82,13 @@ def test_registered_route(serve):
     service.register_route("/hello", lambda query: (200, "hi " + query.get("name", [""])[0]))
     url = serve(lambda p: None)
     assert urllib.request.urlopen(url + "/hello?name=Boots", timeout=5).read() == b"hi Boots"
+
+
+def test_queued_callables_run_on_the_same_worker():
+    done = threading.Event()
+    s = make_server(lambda p: None, port=0)
+    try:
+        s.enqueue(done.set)
+        assert done.wait(5)
+    finally:
+        s.server_close()

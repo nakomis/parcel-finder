@@ -86,7 +86,45 @@ def serve(args) -> int:
     register_callback()
     srv = make_server(handle)
     print(f"parcel-finder listening on http://{config.HOST}:{config.PORT}", flush=True)
+    _serve_phone(srv.enqueue)
     srv.serve_forever()
+    return 0
+
+
+def _serve_phone(enqueue) -> None:
+    """The phone's listener, once a phone is paired; its runs share the loopback service's worker."""
+    import threading
+    from . import phone
+    try:
+        token = config.secret(*config.PHONE_TOKEN)
+    except config.MissingSecret:
+        print("no phone paired (run `parcel-finder pair`): phone listener off", flush=True)
+        return
+    runs = phone.Runs()
+
+    def queue_job(job):
+        def go():
+            out = phone.run_job(job, runs)
+            print(f"{out.run_id} {out.status} {out.session_id or ''} {out.detail} (phone)".rstrip(), flush=True)
+        enqueue(go)
+    lan = phone.make_lan_server(queue_job, runs, token)
+    threading.Thread(target=lan.serve_forever, daemon=True, name="parcel-finder-phone").start()
+    phone.advertise()
+    print(f"phone listener on port {config.LAN_PORT} (Bonjour _parcel-finder._tcp)", flush=True)
+
+
+def pair(args) -> int:
+    """A new phone token (replacing any old one), shown once as a QR code for ScreenEye to scan."""
+    import secrets
+    import shutil
+    import subprocess
+    token = secrets.token_urlsafe(24)
+    config.store_secret(*config.PHONE_TOKEN, token)
+    payload = json.dumps({"parcel_finder_token": token})
+    if shutil.which("qrencode"):
+        subprocess.run(["qrencode", "-t", "ANSIUTF8", payload])
+    print(f"Scan this with ScreenEye (Settings → Pair with parcel-finder), or type the token:\n  {token}")
+    print("Then restart the service: launchctl kickstart -k gui/$(id -u)/com.nakomis.parcel-finder")
     return 0
 
 
@@ -208,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--code", help="paste the ?code= by hand")
     a.set_defaults(fn=authorise)
     sub.add_parser("authorise-google", help="one-off read-only Gmail consent").set_defaults(fn=authorise_google)
+    sub.add_parser("pair", help="pair a phone (ScreenEye) with the LAN listener").set_defaults(fn=pair)
     sub.add_parser("refresh", help="refresh the AliExpress tokens and sync order emails").set_defaults(fn=refresh)
     sub.add_parser("sync", help="sync order emails from Gmail into the cache").set_defaults(fn=sync_orders)
     o = sub.add_parser("orders", help="list orders")

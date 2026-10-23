@@ -21,15 +21,16 @@ def make_server(handler: Callable[[Path], None], host: str = config.HOST, port: 
                 allowed_root: Path = config.SCREENEYE_DIR) -> ThreadingHTTPServer:
     if host != "127.0.0.1":
         raise ValueError("parcel-finder only listens on 127.0.0.1")
-    jobs: "queue.Queue[Path]" = queue.Queue()
+    # Photos from POST /photo, and callables (phone runs, see phone.py): one worker, one run at a time.
+    jobs: "queue.Queue[Path | Callable[[], None]]" = queue.Queue()
 
     def worker():
         while True:
-            photo = jobs.get()
+            job = jobs.get()
             try:
-                handler(photo)
+                job() if callable(job) else handler(job)
             except Exception as e:  # one bad run mustn't kill the worker
-                print(f"run failed for {photo}: {e!r}", flush=True)
+                print(f"run failed for {job}: {e!r}", flush=True)
             finally:
                 jobs.task_done()
 
@@ -77,4 +78,6 @@ def make_server(handler: Callable[[Path], None], host: str = config.HOST, port: 
         def log_message(self, *args):  # the run log is the record, not stderr
             pass
 
-    return ThreadingHTTPServer((host, port), Handler)
+    srv = ThreadingHTTPServer((host, port), Handler)
+    srv.enqueue = jobs.put
+    return srv

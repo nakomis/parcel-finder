@@ -74,10 +74,12 @@ class Deps:
                    delivery.send, delivery.raise_tab, delivery.resume_in_new_tab, ui.notify)
 
 
-def run(photo: Path, deps: Deps | None = None, dry_run: bool = False) -> Outcome:
+def run(photo: Path, deps: Deps | None = None, dry_run: bool = False, run_id: str | None = None,
+        listener: Callable | None = None) -> Outcome:
+    """run_id and listener: a phone run's ID (already given to the phone) and its progress hook."""
     from .delivery import message
     deps = deps or Deps.real()
-    log = RunLog.start(photo, deps.log_dir)
+    log = RunLog.start(photo, deps.log_dir, run_id=run_id, listener=listener)
 
     def done(status: str, session_id: str | None = None, detail: str = "", note: str | None = None) -> Outcome:
         if note:

@@ -142,3 +142,10 @@ def test_search_uses_short_name_and_ocr_terms(deps, photo_fixture):
     d.calls = deps.calls
     pipeline.run(photo_fixture, d)
     assert queries[0].startswith("SOP-24 adapter") and "SOP24PIN" in queries[0] and "long" not in queries[0]
+
+
+def test_run_uses_the_given_run_id_and_reports_progress(deps, photo_fixture):
+    stages = []
+    out = pipeline.run(photo_fixture, deps, run_id="20261023-150000-abcd", listener=lambda s, d: stages.append(s))
+    assert out.run_id == "20261023-150000-abcd"
+    assert stages[0] == "start" and stages[-1] == "finish" and "search" in stages
