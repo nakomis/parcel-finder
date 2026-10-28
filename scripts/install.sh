@@ -2,6 +2,8 @@
 # Install (or reinstall) parcel-finder's LaunchAgents for the current user.
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
+# Put the CLI on PATH (~/.local/bin) so `parcel-finder authorise` etc. work from a shell.
+uv tool install --editable --force "$repo"
 dest=~/Library/LaunchAgents
 mkdir -p "$dest" ~/Library/Logs/parcel-finder
 for label in com.nakomis.parcel-finder com.nakomis.parcel-finder.refresh; do
